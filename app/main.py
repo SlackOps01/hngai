@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
+import uuid
+from datetime import datetime, timezone
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-import uuid
-from .summarizer import summarize_articles  # use absolute import if deploying
+from .summarizer import summarize_articles  # local summarizer logic
 
 app = FastAPI(
     title="Cybersecurity Summarizer Agent",
@@ -10,58 +11,114 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# ----------------------------
-# Temporary in-memory store
-# ----------------------------
-TASK_RESULTS = {}
+# -------------------------------------------------
+# Helper for timestamps
+# -------------------------------------------------
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
 
-# ----------------------------
-# Root + fallback for Telex
-# ----------------------------
-@app.get("/")
-def root():
-    return {"message": "Cybersecurity Summarizer Agent active. See /.well-known/a2a.json"}
-
+# -------------------------------------------------
+# Root and fallback POST (Telex calls this)
+# -------------------------------------------------
 @app.post("/")
-async def root_post(background_tasks: BackgroundTasks):
+async def root_post(_: Request):
     """
-    Handles Telex POST directly to root.
+    Main Telex-compatible entrypoint.
     """
-    task_id = str(uuid.uuid4())
-
-    # Schedule background summarization
-    background_tasks.add_task(run_summary_background, task_id)
-
-    return JSONResponse(
-        content={
-            "protocol": "A2A",
-            "version": "1.0",
-            "status": "processing",
-            "message": "Summarization started. Fetch results from /a2a/result/{task_id}",
-            "task_id": task_id
-        },
-        media_type="application/json"
-    )
-
-# ----------------------------
-# Background job
-# ----------------------------
-def run_summary_background(task_id: str):
     try:
         summary = summarize_articles()
-        TASK_RESULTS[task_id] = {
-            "status": "success",
-            "summary": summary
-        }
-    except Exception as e:
-        TASK_RESULTS[task_id] = {
-            "status": "error",
-            "message": str(e)
+
+        task_id = f"task-{uuid.uuid4()}"
+        context_id = f"ctx-{uuid.uuid4()}"
+        message_id = f"msg-{uuid.uuid4()}"
+        artifact_id = f"artifact-{uuid.uuid4()}"
+
+        response = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "result": {
+                "id": task_id,
+                "contextId": context_id,
+                "status": {
+                    "state": "completed",
+                    "timestamp": now_iso(),
+                    "message": {
+                        "kind": "message",
+                        "role": "agent",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": f"📰 Cybersecurity Summary:\n\n{summary}",
+                                "data": None,
+                                "file_url": None
+                            }
+                        ],
+                        "messageId": message_id,
+                        "taskId": task_id,
+                        "metadata": None
+                    }
+                },
+                "artifacts": [
+                    {
+                        "artifactId": artifact_id,
+                        "name": "CybersecuritySummary",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": f"📰 Cybersecurity Summary:\n\n{summary}",
+                                "data": None,
+                                "file_url": None
+                            }
+                        ]
+                    }
+                ],
+                "history": [
+                    {
+                        "kind": "message",
+                        "role": "user",
+                        "parts": [{"kind": "text", "text": "", "data": None, "file_url": None}],
+                        "messageId": f"msg-{uuid.uuid4()}",
+                        "taskId": None,
+                        "metadata": None
+                    },
+                    {
+                        "kind": "message",
+                        "role": "agent",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": f"📰 Cybersecurity Summary:\n\n{summary}",
+                                "data": None,
+                                "file_url": None
+                            }
+                        ],
+                        "messageId": message_id,
+                        "taskId": task_id,
+                        "metadata": None
+                    }
+                ],
+                "kind": "task"
+            },
+            "error": None
         }
 
-# ----------------------------
-# A2A Discovery
-# ----------------------------
+        return JSONResponse(content=response)
+
+    except Exception as e:
+        error_response = {
+            "jsonrpc": "2.0",
+            "id": str(uuid.uuid4()),
+            "error": {
+                "code": -32000,
+                "message": "Internal Server Error",
+                "data": str(e)
+            }
+        }
+        return JSONResponse(content=error_response, status_code=500)
+
+# -------------------------------------------------
+# Well-known (A2A discovery)
+# -------------------------------------------------
 @app.get("/.well-known/a2a.json")
 def wellknown_a2a():
     return JSONResponse(
@@ -69,94 +126,14 @@ def wellknown_a2a():
             "name": "CybersecuritySummarizerAgent",
             "version": "1.0.0",
             "a2a_version": "1.0",
-            "description": "An AI agent that scrapes and summarizes cybersecurity headlines asynchronously.",
-            "endpoints": {
-                "metadata": "/a2a/metadata",
-                "invoke": "/a2a/invoke",
-                "result": "/a2a/result/{task_id}"
-            },
+            "description": "An AI agent that scrapes and summarizes cybersecurity headlines.",
+            "endpoints": {"invoke": "/"},
             "inputs": {},
             "outputs": {
                 "summary": {
                     "type": "string",
                     "description": "Summarized cybersecurity headlines."
                 }
-            },
-            "notes": "After invoking, poll /a2a/result/{task_id} for the finished summary."
-        },
-        media_type="application/json"
-    )
-
-# ----------------------------
-# A2A Metadata
-# ----------------------------
-@app.get("/a2a/metadata")
-def get_metadata():
-    return JSONResponse(
-        content={
-            "name": "Cybersecurity Summarizer",
-            "version": "1.0.0",
-            "description": (
-                "Scrapes and summarizes cybersecurity headlines from The Hacker News. "
-                "This agent runs asynchronously — fetch results via /a2a/result/{task_id}."
-            ),
-            "inputs": [],
-            "outputs": ["summary"]
-        },
-        media_type="application/json"
-    )
-
-# ----------------------------
-# A2A Invoke
-# ----------------------------
-class InvokeRequest(BaseModel):
-    source_url: str | None = None
-
-@app.post("/a2a/invoke")
-async def invoke_agent(_: InvokeRequest, background_tasks: BackgroundTasks):
-    """
-    Main A2A entrypoint that starts summarization in the background.
-    """
-    task_id = str(uuid.uuid4())
-    background_tasks.add_task(run_summary_background, task_id)
-
-    return JSONResponse(
-        content={
-            "protocol": "A2A",
-            "version": "1.0",
-            "status": "processing",
-            "message": "Summarization started. Fetch results from /a2a/result/{task_id}",
-            "task_id": task_id
-        },
-        media_type="application/json"
-    )
-
-# ----------------------------
-# A2A Result
-# ----------------------------
-@app.get("/a2a/result/{task_id}")
-def get_result(task_id: str):
-    """
-    Returns the summary result for a given task_id.
-    """
-    result = TASK_RESULTS.get(task_id)
-    if not result:
-        return JSONResponse(
-            content={
-                "protocol": "A2A",
-                "version": "1.0",
-                "status": "processing",
-                "message": "Result not ready yet. Please check back later."
-            },
-            status_code=202,
-            media_type="application/json"
-        )
-
-    return JSONResponse(
-        content={
-            "protocol": "A2A",
-            "version": "1.0",
-            **result
-        },
-        media_type="application/json"
+            }
+        }
     )
