@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from .summarizer import summarize_articles
+from .summarizer import summarize_articles  # no relative import for uvicorn compatibility
 
 app = FastAPI(
     title="Cybersecurity Summarizer Agent",
@@ -26,14 +25,7 @@ def wellknown_a2a():
             "metadata": "/a2a/metadata",
             "invoke": "/a2a/invoke"
         },
-        "inputs": {
-            "source_url": {
-                "type": "string",
-                "required": False,
-                "default": "https://thehackernews.com/",
-                "description": "The URL to scrape cybersecurity headlines from."
-            }
-        },
+        "inputs": {},
         "outputs": {
             "summary": {
                 "type": "string",
@@ -50,8 +42,8 @@ def get_metadata():
     return {
         "name": "Cybersecurity Summarizer",
         "version": "1.0.0",
-        "description": "Scrapes and summarizes cybersecurity headlines from a given URL.",
-        "inputs": ["source_url"],
+        "description": "Scrapes and summarizes cybersecurity headlines from The Hacker News.",
+        "inputs": [],
         "outputs": ["summary"]
     }
 
@@ -59,12 +51,16 @@ def get_metadata():
 # A2A INVOKE ENDPOINT
 # ----------------------------
 class InvokeRequest(BaseModel):
+    # request body kept for A2A compliance, but unused
     source_url: str | None = None
 
 @app.post("/a2a/invoke")
 def invoke_agent(request: InvokeRequest):
+    """
+    Main A2A entrypoint. Ignores input and runs summarize_articles().
+    """
     try:
-        summary = summarize_articles(request.source_url or "https://thehackernews.com/")
+        summary = summarize_articles()  # no arguments needed
         return {
             "protocol": "A2A",
             "version": "1.0",
@@ -72,5 +68,7 @@ def invoke_agent(request: InvokeRequest):
             "outputs": {"summary": summary}
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail={"status": "error", "message": str(e)})
-
+        raise HTTPException(status_code=500, detail={
+            "status": "error",
+            "message": str(e)
+        })
