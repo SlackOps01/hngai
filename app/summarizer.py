@@ -31,9 +31,8 @@ def summarize_articles():
         )
 
         completions = client.chat.completions.create(
-            model="z-ai/glm-4.5-air:free",
+            model="google/gemma-3n-e2b-it:free",
             messages=[
-                {"role": "system", "content": "You are an AI that summarizes cybersecurity headlines."},
                 {"role": "user", "content": f"Summarize the following articles:\n{headlines}"}
             ]
         )
