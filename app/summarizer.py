@@ -31,7 +31,7 @@ def summarize_articles():
         )
 
         completions = client.chat.completions.create(
-            model="google/gemma-3n-e2b-it:free",
+            model="meta-llama/llama-3.3-8b-instruct:free",
             messages=[
                 {"role": "user", "content": f"Summarize the following articles:\n{headlines}"}
             ]
