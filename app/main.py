@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from .summarizer import summarize_articles  # no relative import for uvicorn compatibility
+from .summarizer import summarize_articles  # use absolute import if deploying
 
 app = FastAPI(
     title="Cybersecurity Summarizer Agent",
@@ -10,17 +10,16 @@ app = FastAPI(
 )
 
 # ----------------------------
-# .well-known A2A JSON (Discovery)
+# Root and Fallback
 # ----------------------------
 @app.get("/")
 def root():
     return {"message": "Cybersecurity Summarizer Agent active. See /.well-known/a2a.json"}
 
 @app.post("/")
-async def root_post(request: Request):
+async def root_post():
     """
-    Fallback handler for systems (like Telex) that POST directly to root.
-    We’ll redirect them to the A2A invoke logic.
+    Fallback for platforms like Telex that POST to root.
     """
     try:
         summary = summarize_articles()
@@ -30,7 +29,8 @@ async def root_post(request: Request):
                 "version": "1.0",
                 "status": "success",
                 "outputs": {"summary": summary}
-            }
+            },
+            media_type="application/json"
         )
     except Exception as e:
         return JSONResponse(
@@ -40,68 +40,82 @@ async def root_post(request: Request):
                 "status": "error",
                 "message": str(e)
             },
-            status_code=500
+            status_code=500,
+            media_type="application/json"
         )
-    
-
-@app.get("/.well-known/a2a.json")
-def wellknown_a2a():
-    """
-    Discovery endpoint describing this AI Agent.
-    """
-    return {
-        "name": "CybersecuritySummarizerAgent",
-        "version": "1.0.0",
-        "a2a_version": "1.0",
-        "description": "An AI agent that scrapes and summarizes cybersecurity headlines.",
-        "endpoints": {
-            "metadata": "/a2a/metadata",
-            "invoke": "/a2a/invoke"
-        },
-        "inputs": {},
-        "outputs": {
-            "summary": {
-                "type": "string",
-                "description": "Summarized cybersecurity headlines."
-            }
-        }
-    }
 
 # ----------------------------
-# A2A METADATA ENDPOINT
+# Well-Known A2A Discovery
+# ----------------------------
+@app.get("/.well-known/a2a.json")
+def wellknown_a2a():
+    return JSONResponse(
+        content={
+            "name": "CybersecuritySummarizerAgent",
+            "version": "1.0.0",
+            "a2a_version": "1.0",
+            "description": "An AI agent that scrapes and summarizes cybersecurity headlines.",
+            "endpoints": {
+                "metadata": "/a2a/metadata",
+                "invoke": "/a2a/invoke"
+            },
+            "inputs": {},
+            "outputs": {
+                "summary": {
+                    "type": "string",
+                    "description": "Summarized cybersecurity headlines."
+                }
+            }
+        },
+        media_type="application/json"
+    )
+
+# ----------------------------
+# A2A Metadata
 # ----------------------------
 @app.get("/a2a/metadata")
 def get_metadata():
-    return {
-        "name": "Cybersecurity Summarizer",
-        "version": "1.0.0",
-        "description": "Scrapes and summarizes cybersecurity headlines from The Hacker News.",
-        "inputs": [],
-        "outputs": ["summary"]
-    }
+    return JSONResponse(
+        content={
+            "name": "Cybersecurity Summarizer",
+            "version": "1.0.0",
+            "description": "Scrapes and summarizes cybersecurity headlines from The Hacker News.",
+            "inputs": [],
+            "outputs": ["summary"]
+        },
+        media_type="application/json"
+    )
 
 # ----------------------------
-# A2A INVOKE ENDPOINT
+# A2A Invoke
 # ----------------------------
 class InvokeRequest(BaseModel):
-    # request body kept for A2A compliance, but unused
-    source_url: str | None = None
+    source_url: str | None = None  # unused
 
 @app.post("/a2a/invoke")
-def invoke_agent(request: InvokeRequest):
+async def invoke_agent(_: InvokeRequest):
     """
-    Main A2A entrypoint. Ignores input and runs summarize_articles().
+    A2A entrypoint that triggers the summarizer.
     """
     try:
-        summary = summarize_articles()  # no arguments needed
-        return {
-            "protocol": "A2A",
-            "version": "1.0",
-            "status": "success",
-            "outputs": {"summary": summary}
-        }
+        summary = summarize_articles()
+        return JSONResponse(
+            content={
+                "protocol": "A2A",
+                "version": "1.0",
+                "status": "success",
+                "outputs": {"summary": summary}
+            },
+            media_type="application/json"
+        )
     except Exception as e:
-        raise HTTPException(status_code=500, detail={
-            "status": "error",
-            "message": str(e)
-        })
+        return JSONResponse(
+            content={
+                "protocol": "A2A",
+                "version": "1.0",
+                "status": "error",
+                "message": str(e)
+            },
+            status_code=500,
+            media_type="application/json"
+        )
