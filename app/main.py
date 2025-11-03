@@ -11,6 +11,10 @@ app = FastAPI(
 # ----------------------------
 # .well-known A2A JSON (Discovery)
 # ----------------------------
+@app.get("/")
+def root():
+    return {"message": "Cybersecurity Summarizer Agent active. See /.well-known/a2a.json"}
+
 @app.get("/.well-known/a2a.json")
 def wellknown_a2a():
     """
