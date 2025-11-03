@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from summarizer import summarize_articles
+from .summarizer import summarize_articles
 
 app = FastAPI(
     title="Cybersecurity Summarizer Agent",
