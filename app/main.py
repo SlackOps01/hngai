@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from .summarizer import summarize_articles  # no relative import for uvicorn compatibility
 
@@ -14,6 +15,34 @@ app = FastAPI(
 @app.get("/")
 def root():
     return {"message": "Cybersecurity Summarizer Agent active. See /.well-known/a2a.json"}
+
+@app.post("/")
+async def root_post(request: Request):
+    """
+    Fallback handler for systems (like Telex) that POST directly to root.
+    We’ll redirect them to the A2A invoke logic.
+    """
+    try:
+        summary = summarize_articles()
+        return JSONResponse(
+            content={
+                "protocol": "A2A",
+                "version": "1.0",
+                "status": "success",
+                "outputs": {"summary": summary}
+            }
+        )
+    except Exception as e:
+        return JSONResponse(
+            content={
+                "protocol": "A2A",
+                "version": "1.0",
+                "status": "error",
+                "message": str(e)
+            },
+            status_code=500
+        )
+    
 
 @app.get("/.well-known/a2a.json")
 def wellknown_a2a():
