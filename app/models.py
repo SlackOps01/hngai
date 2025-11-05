@@ -11,3 +11,6 @@ class A2AMessage(BaseModel):
     recipient: str
     type: str
     content: Optional[A2AContent]
+
+
+# Did not use currently, kept for improvements
